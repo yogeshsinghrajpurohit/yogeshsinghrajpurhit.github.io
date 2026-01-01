@@ -259,6 +259,11 @@
             <div class="emergency-title">⚠️ Emergency Control</div>
             <div class="emergency-desc">Turn off all relays immediately (works online and offline)</div>
             <button class="all-off-btn" id="allOffBtn" onclick="sendAllOff()">ALL OFF</button>
+            <div style="margin-top: 15px;">
+                <button onclick="clearAllOff()" style="background: #17a2b8; color: white; padding: 10px 30px; font-size: 1em;">
+                    Clear ALL OFF Command
+                </button>
+            </div>
         </div>
 
         <div class="footer">
@@ -427,6 +432,25 @@
             });
         }
         
+        // Clear ALL OFF retained message
+        function clearAllOff() {
+            if (!brokerConnected) {
+                alert('Not connected to MQTT broker');
+                return;
+            }
+            
+            const topic = `${BASE_TOPIC}/system/all`;
+            mqttClient.publish(topic, '', { qos: 0, retain: true }, (err) => {
+                if (err) {
+                    console.error('Failed to clear ALL_OFF:', err);
+                    debugLog('Error: Failed to clear ALL_OFF');
+                } else {
+                    debugLog('ALL_OFF command cleared');
+                    alert('ALL_OFF command has been cleared from the broker');
+                }
+            });
+        }
+        
         // Connect to MQTT broker
         function connectMQTT() {
             const brokerUrl = MQTT_BROKERS[currentBrokerIndex];
@@ -480,6 +504,14 @@
                 if (relayMatch) {
                     const relayNum = parseInt(relayMatch[1]);
                     updateRelayState(relayNum, msg);
+                    
+                    // If we receive relay state updates, device must be online
+                    // This handles cases where we miss the status message
+                    if (!deviceOnline) {
+                        deviceOnline = true;
+                        updateStatus();
+                        debugLog('Device detected online via relay state update');
+                    }
                 }
             });
             
