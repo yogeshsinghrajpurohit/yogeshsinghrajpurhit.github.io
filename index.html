@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -76,6 +75,11 @@
             background: #dc3545;
             box-shadow: 0 0 10px #dc3545;
             animation: none;
+        }
+
+        .status-dot.connecting {
+            background: #ffc107;
+            box-shadow: 0 0 10px #ffc107;
         }
 
         @keyframes pulse {
@@ -222,6 +226,17 @@
             padding: 20px;
             font-size: 0.9em;
         }
+
+        .debug-info {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 0.8em;
+            margin-top: 10px;
+            text-align: left;
+        }
     </style>
 </head>
 <body>
@@ -230,8 +245,8 @@
             <h1>🔌 ESP32 Relay Control Dashboard</h1>
             <div class="status-bar">
                 <div class="status-indicator">
-                    <div class="status-dot offline" id="statusDot"></div>
-                    <span id="statusText">Connecting...</span>
+                    <div class="status-dot connecting" id="statusDot"></div>
+                    <span id="statusText">Connecting to MQTT...</span>
                 </div>
             </div>
         </div>
@@ -247,7 +262,8 @@
         </div>
 
         <div class="footer">
-            ESP32 MQTT Relay Control System | Innovation Lab ECB EICE
+            <div>ESP32 MQTT Relay Control System | Innovation Lab ECB EICE</div>
+            <div class="debug-info" id="debugInfo">Initializing...</div>
         </div>
     </div>
 
@@ -256,18 +272,33 @@
         const BASE_TOPIC = 'smart_innovation_lab_ecb_eice';
         const RELAY_COUNT = 8;
         
-        // MQTT Configuration
-        const MQTT_BROKER = 'ws://broker.emqx.io:8083/mqtt';
+        // MQTT Configuration - Try WebSocket Secure first, fallback to regular
+        const MQTT_BROKERS = [
+            'wss://broker.emqx.io:8084/mqtt',  // WebSocket Secure
+            'ws://broker.emqx.io:8083/mqtt'     // Regular WebSocket (fallback)
+        ];
+        let currentBrokerIndex = 0;
         const CLIENT_ID = 'WebDashboard_' + Math.random().toString(16).substr(2, 8);
         
         // State
         let mqttClient = null;
         let deviceOnline = false;
         let relayStates = {};
+        let brokerConnected = false;
         
         // Initialize relay states as unknown
         for (let i = 1; i <= RELAY_COUNT; i++) {
             relayStates[i] = '?';
+        }
+        
+        // Debug logging
+        function debugLog(msg) {
+            console.log(msg);
+            const debugInfo = document.getElementById('debugInfo');
+            if (debugInfo) {
+                const timestamp = new Date().toLocaleTimeString();
+                debugInfo.textContent = `[${timestamp}] ${msg}`;
+            }
         }
         
         // Generate relay cards
@@ -296,13 +327,15 @@
             }
         }
         
-        // Update UI based on device status
-        function updateDeviceStatus(online) {
-            deviceOnline = online;
+        // Update UI based on connection and device status
+        function updateStatus() {
             const statusDot = document.getElementById('statusDot');
             const statusText = document.getElementById('statusText');
             
-            if (online) {
+            if (!brokerConnected) {
+                statusDot.className = 'status-dot connecting';
+                statusText.textContent = 'Connecting to MQTT Broker...';
+            } else if (deviceOnline) {
                 statusDot.className = 'status-dot online';
                 statusText.textContent = 'ESP32 Online';
             } else {
@@ -319,7 +352,7 @@
                 const onBtn = document.getElementById(`onBtn${i}`);
                 const offBtn = document.getElementById(`offBtn${i}`);
                 
-                if (deviceOnline) {
+                if (brokerConnected && deviceOnline) {
                     onBtn.disabled = false;
                     offBtn.disabled = false;
                 } else {
@@ -348,6 +381,11 @@
         
         // Send relay command
         function sendRelayCommand(relayNum, command) {
+            if (!brokerConnected) {
+                alert('Not connected to MQTT broker');
+                return;
+            }
+            
             if (!deviceOnline) {
                 alert('Cannot control relays while ESP32 is offline');
                 return;
@@ -357,24 +395,31 @@
             mqttClient.publish(topic, command, { qos: 0, retain: false }, (err) => {
                 if (err) {
                     console.error('Failed to send command:', err);
+                    debugLog(`Error: Failed to send ${command} to Relay ${relayNum}`);
                 } else {
-                    console.log(`Sent ${command} to Relay ${relayNum}`);
+                    debugLog(`Sent ${command} to Relay ${relayNum}`);
                 }
             });
         }
         
         // Send ALL OFF command
         function sendAllOff() {
+            if (!brokerConnected) {
+                alert('Not connected to MQTT broker');
+                return;
+            }
+            
             const topic = `${BASE_TOPIC}/system/all`;
             mqttClient.publish(topic, 'ALL_OFF', { qos: 0, retain: true }, (err) => {
                 if (err) {
                     console.error('Failed to send ALL_OFF:', err);
+                    debugLog('Error: Failed to send ALL_OFF');
                 } else {
-                    console.log('ALL_OFF command sent');
+                    debugLog('ALL_OFF command sent (retained)');
                     
-                    // Optimistically update UI to show all OFF
-                    for (let i = 1; i <= RELAY_COUNT; i++) {
-                        if (!deviceOnline) {
+                    // Optimistically update UI to show all OFF if device is offline
+                    if (!deviceOnline) {
+                        for (let i = 1; i <= RELAY_COUNT; i++) {
                             updateRelayState(i, 'OFF');
                         }
                     }
@@ -384,34 +429,46 @@
         
         // Connect to MQTT broker
         function connectMQTT() {
-            console.log('Connecting to MQTT broker...');
+            const brokerUrl = MQTT_BROKERS[currentBrokerIndex];
+            debugLog(`Attempting to connect to: ${brokerUrl}`);
             
-            mqttClient = mqtt.connect(MQTT_BROKER, {
+            mqttClient = mqtt.connect(brokerUrl, {
                 clientId: CLIENT_ID,
                 clean: true,
-                reconnectPeriod: 1000
+                reconnectPeriod: 5000,
+                connectTimeout: 10000
             });
             
             mqttClient.on('connect', () => {
-                console.log('Connected to MQTT broker');
+                debugLog(`Connected to MQTT broker: ${brokerUrl}`);
+                brokerConnected = true;
+                updateStatus();
                 
                 // Subscribe to topics
-                mqttClient.subscribe(`${BASE_TOPIC}/device/status`);
-                mqttClient.subscribe(`${BASE_TOPIC}/relay/+/state`);
+                mqttClient.subscribe(`${BASE_TOPIC}/device/status`, (err) => {
+                    if (!err) {
+                        debugLog('Subscribed to device/status');
+                    }
+                });
                 
-                console.log('Subscribed to topics');
+                mqttClient.subscribe(`${BASE_TOPIC}/relay/+/state`, (err) => {
+                    if (!err) {
+                        debugLog('Subscribed to relay states');
+                    }
+                });
             });
             
             mqttClient.on('message', (topic, message) => {
                 const msg = message.toString();
-                console.log(`Received: ${topic} = ${msg}`);
+                debugLog(`Received: ${topic} = ${msg}`);
                 
                 // Device status
                 if (topic === `${BASE_TOPIC}/device/status`) {
-                    updateDeviceStatus(msg === 'online');
+                    deviceOnline = (msg === 'online');
+                    updateStatus();
                     
                     // If device goes offline, set all relay states to unknown
-                    if (msg === 'offline') {
+                    if (!deviceOnline) {
                         for (let i = 1; i <= RELAY_COUNT; i++) {
                             updateRelayState(i, '?');
                         }
@@ -428,19 +485,43 @@
             
             mqttClient.on('error', (err) => {
                 console.error('MQTT error:', err);
+                debugLog(`MQTT Error: ${err.message}`);
+                brokerConnected = false;
+                updateStatus();
+                
+                // Try next broker
+                if (currentBrokerIndex < MQTT_BROKERS.length - 1) {
+                    currentBrokerIndex++;
+                    debugLog('Trying alternative broker...');
+                    setTimeout(() => {
+                        if (mqttClient) {
+                            mqttClient.end(true);
+                        }
+                        connectMQTT();
+                    }, 2000);
+                }
             });
             
             mqttClient.on('offline', () => {
-                console.log('MQTT client offline');
+                debugLog('MQTT client offline');
+                brokerConnected = false;
+                updateStatus();
             });
             
             mqttClient.on('reconnect', () => {
-                console.log('Reconnecting to MQTT broker...');
+                debugLog('Reconnecting to MQTT broker...');
+            });
+            
+            mqttClient.on('close', () => {
+                debugLog('Connection closed');
+                brokerConnected = false;
+                updateStatus();
             });
         }
         
         // Initialize
         window.addEventListener('load', () => {
+            debugLog('Dashboard loaded, initializing...');
             generateRelayCards();
             connectMQTT();
         });
