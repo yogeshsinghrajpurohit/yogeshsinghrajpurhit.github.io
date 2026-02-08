@@ -1,178 +1,485 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>ESP32 Smart Relay Control</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Relay Control Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background:  linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+@@ -25,11 +25,11 @@
+            margin: 0 auto;
+        }
 
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+        . header {
+            background: white;
+            padding: 25px;
+            border-radius:  15px;
+            box-shadow:  0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+@@ -62,11 +62,11 @@
+        .status-dot {
+            width: 15px;
+            height: 15px;
+            border-radius:  50%;
+            animation: pulse 2s infinite;
+        }
 
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: #eee;
-      padding: 20px;
-    }
+        . status-dot.online {
+            background: #28a745;
+            box-shadow: 0 0 10px #28a745;
+        }
+@@ -79,7 +79,7 @@
 
-    h1 {
-      text-align: center;
-    }
+        .status-dot.connecting {
+            background: #ffc107;
+            box-shadow:  0 0 10px #ffc107;
+        }
 
-    .status {
-      text-align: center;
-      font-size: 20px;
-      margin-bottom: 20px;
-    }
+        @keyframes pulse {
+@@ -97,14 +97,14 @@
+        .relay-card {
+            background: white;
+            padding: 25px;
+            border-radius:  15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
 
-    .online { color: #00ff00; }
-    .offline { color: #ff4444; }
+        .relay-card:hover {
+            transform: translateY(-5px);
+            box-shadow:  0 10px 25px rgba(0,0,0,0.15);
+        }
 
-    .relay {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #222;
-      padding: 12px;
-      margin: 8px 0;
-      border-radius: 8px;
-    }
+        .relay-header {
+@@ -116,13 +116,13 @@
 
-    .switch {
-      position: relative;
-      width: 50px;
-      height: 26px;
-    }
+        .relay-name {
+            font-size: 1.3em;
+            font-weight:  700;
+            color: #667eea;
+        }
 
-    .switch input {
-      display: none;
-    }
+        . relay-state {
+            padding: 5px 15px;
+            border-radius:  20px;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+@@ -134,10 +134,10 @@
 
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      inset: 0;
-      background: #555;
-      border-radius: 26px;
-      transition: 0.3s;
-    }
+        .relay-state.off {
+            background: #6c757d;
+            color:  white;
+        }
 
-    .slider:before {
-      content: "";
-      position: absolute;
-      height: 20px;
-      width: 20px;
-      left: 3px;
-      bottom: 3px;
-      background: white;
-      border-radius: 50%;
-      transition: 0.3s;
-    }
+        . relay-state.unknown {
+            background: #ffc107;
+            color: #333;
+        }
+@@ -150,11 +150,11 @@
 
-    input:checked + .slider {
-      background: #00cc66;
-    }
+        button {
+            flex: 1;
+            padding:  12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight:  600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+@@ -169,74 +169,121 @@
+            color: white;
+        }
 
-    input:checked + .slider:before {
-      transform: translateX(24px);
-    }
+        button. on-btn:hover: not(:disabled) {
+            background: #218838;
+        }
 
-    input:disabled + .slider {
-      background: #333;
-      cursor: not-allowed;
-    }
-  </style>
+        button.off-btn {
+            background: #6c757d;
+            color:  white;
+        }
+
+        button.off-btn:hover:not(:disabled) {
+            background: #545b62;
+        }
+
+        . emergency-section {
+            background: white;
+            padding: 40px;
+            border-radius:  15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .emergency-title {
+            color: #dc3545;
+            font-size: 1.8em;
+            margin-bottom:  15px;
+            font-weight: 700;
+        }
+
+        .emergency-desc {
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 1.1em;
+        }
+
+        .emergency-button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .all-off-toggle {
+            padding: 20px 60px;
+            font-size: 1.5em;
+            border: none;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            min-width: 250px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .all-off-toggle. off {
+            background: #6c757d;
+            color: white;
+        }
+
+        .all-off-toggle.off:hover: not(:disabled) {
+            background: #545b62;
+            transform: scale(1.05);
+        }
+
+        .all-off-toggle.on {
+            background: #dc3545;
+            color: white;
+
+        }
+
+        .all-off-toggle.on:hover:not(:disabled) {
+            background: #c82333;
+            transform: scale(1.05);
+        }
+
+        .all-off-toggle: disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 30px;
+            padding: 20px;
+            font-size:  0.9em;
+        }
+
+        .debug-info {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            padding: 10px;
+            border-radius:  5px;
+            font-family: monospace;
+            font-size:  0.8em;
+            margin-top: 10px;
+            text-align: left;
+        }
+
+        .indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right:  8px;
+        }
+
+        .indicator.active {
+            background: #dc3545;
+            box-shadow: 0 0 8px #dc3545;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+    </style>
 </head>
 <body>
+@@ -251,21 +298,23 @@
+            </div>
+        </div>
 
-<h1>ESP32 Smart Innovation Lab</h1>
 
-<div id="status" class="status offline">ESP32 OFFLINE</div>
 
-<div id="relays"></div>
 
-<script>
-/* ================= MQTT CONFIG ================= */
-const broker = "wss://broker.emqx.io:8084/mqtt";
-const baseTopic = "smart_innovation_lab_ecb_eice";
 
-/* ================= STATE ================= */
-let espOnline = false;
+        <div class="emergency-section">
+            <div class="emergency-title">⚠️ Emergency Control</div>
+            <div class="emergency-desc">
+                <span class="indicator" id="allOffIndicator"></span>
+                Toggle ALL OFF state
+            </div>
+            <div class="emergency-button-group">
+                <button class="all-off-toggle off" id="allOffBtn" onclick="toggleAllOff()" disabled>
+                    ALL OFF:  OFF
+                </button>
+            </div>
+        </div>
 
-/* ================= MQTT CONNECT ================= */
-const client = mqtt.connect(broker);
+        <div class="relay-grid" id="relayGrid">
+            <!-- Relay cards will be generated here -->
+        </div>
 
-client.on("connect", () => {
-  console.log("Connected to MQTT broker");
+        <div class="footer">
+            <div>ESP32 MQTT Relay Control System | Innovation Lab ECB EICE</div>
+            <div class="debug-info" id="debugInfo">Initializing...</div>
+@@ -277,10 +326,10 @@
+        const BASE_TOPIC = 'smart_innovation_lab_ecb_eice';
+        const RELAY_COUNT = 8;
 
-  client.subscribe(`${baseTopic}/status/online`);
-  client.subscribe(`${baseTopic}/relay/+/state`);
-});
+        // MQTT Configuration
+        const MQTT_BROKERS = [
+            'wss://broker.emqx.io:8084/mqtt',
+            'ws://broker.emqx.io:8083/mqtt'
+        ];
+        let currentBrokerIndex = 0;
+        const CLIENT_ID = 'WebDashboard_' + Math.random().toString(16).substr(2, 8);
+@@ -290,10 +339,11 @@
+        let deviceOnline = false;
+        let relayStates = {};
+        let brokerConnected = false;
+        let allOffState = false;  // Track ALL OFF state
 
-/* ================= MQTT MESSAGE ================= */
-client.on("message", (topic, payload) => {
-  const msg = payload.toString();
+        // Initialize relay states as unknown
+        for (let i = 1; i <= RELAY_COUNT; i++) {
+            relayStates[i] = '? ';
+        }
 
-  if (topic === `${baseTopic}/status/online`) {
-    espOnline = (msg === "ONLINE");
-    updateStatus();
-    setAllSwitchEnable(espOnline);
-    return;
-  }
+        // Debug logging
+@@ -337,7 +387,7 @@
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
 
-  const match = topic.match(/relay\/(\d+)\/state/);
-  if (match) {
-    const index = parseInt(match[1]) - 1;
-    const checkbox = document.getElementById(`relay${index}`);
-    if (checkbox) checkbox.checked = (msg === "ON");
-  }
-});
+            if (! brokerConnected) {
+                statusDot.className = 'status-dot connecting';
+                statusText.textContent = 'Connecting to MQTT Broker...';
+            } else if (deviceOnline) {
+@@ -349,6 +399,7 @@
+            }
 
-/* ================= UI FUNCTIONS ================= */
-function updateStatus() {
-  const status = document.getElementById("status");
-  if (espOnline) {
-    status.textContent = "ESP32 ONLINE";
-    status.className = "status online";
-  } else {
-    status.textContent = "ESP32 OFFLINE";
-    status.className = "status offline";
-  }
-}
+            updateRelayButtons();
+            updateAllOffButton();
+        }
 
-function setAllSwitchEnable(enable) {
-  for (let i = 0; i < 8; i++) {
-    document.getElementById(`relay${i}`).disabled = !enable;
-  }
-}
+        // Update relay buttons based on device status
+@@ -366,14 +417,37 @@
+                }
+            }
+        }
 
-function sendRelayCommand(index, state) {
-  if (!espOnline) return;
-  const topic = `${baseTopic}/relay/${index + 1}/set`;
-  client.publish(topic, state ? "ON" : "OFF");
-}
+        // Update ALL OFF button
+        function updateAllOffButton() {
+            const allOffBtn = document.getElementById('allOffBtn');
+            const allOffIndicator = document.getElementById('allOffIndicator');
+            
+            if (! brokerConnected) {
+                allOffBtn.disabled = true;
+            } else {
+                allOffBtn.disabled = false;
+            }
 
-/* ================= BUILD UI ================= */
-const relayContainer = document.getElementById("relays");
+            // Update button appearance based on state
+            if (allOffState) {
+                allOffBtn.className = 'all-off-toggle on';
+                allOffBtn.textContent = '⚠️ ALL OFF: ON ⚠️';
+                allOffIndicator.className = 'indicator active';
+            } else {
+                allOffBtn.className = 'all-off-toggle off';
+                allOffBtn.textContent = 'ALL OFF: OFF';
+                allOffIndicator. className = 'indicator';
+            }
+        }
 
-for (let i = 0; i < 8; i++) {
-  const div = document.createElement("div");
-  div.className = "relay";
+        // Update relay state display
+        function updateRelayState(relayNum, state) {
+            relayStates[relayNum] = state;
+            const stateElement = document.getElementById(`state${relayNum}`);
 
-  div.innerHTML = `
-    <span>Relay ${i + 1}</span>
-    <label class="switch">
-      <input type="checkbox" id="relay${i}" disabled>
-      <span class="slider"></span>
-    </label>
-  `;
+            if (state === 'ON') {
+                stateElement. textContent = 'ON';
+                stateElement.className = 'relay-state on';
+            } else if (state === 'OFF') {
+                stateElement.textContent = 'OFF';
+@@ -391,7 +465,7 @@
+                return;
+            }
 
-  relayContainer.appendChild(div);
+            if (! deviceOnline) {
+                alert('Cannot control relays while ESP32 is offline');
+                return;
+            }
+@@ -400,61 +474,40 @@
+            mqttClient.publish(topic, command, { qos: 0, retain: false }, (err) => {
+                if (err) {
+                    console.error('Failed to send command:', err);
+                    debugLog(`Error:  Failed to send ${command} to Relay ${relayNum}`);
+                } else {
+                    debugLog(`Sent ${command} to Relay ${relayNum}`);
+                }
+            });
+        }
 
-  document.getElementById(`relay${i}`).addEventListener("change", (e) => {
-    sendRelayCommand(i, e.target.checked);
-  });
-}
-</script>
+        // Toggle ALL OFF state
+        function toggleAllOff() {
+            if (!brokerConnected) {
+                alert('Not connected to MQTT broker');
+                return;
+            }
 
+            const topic = `${BASE_TOPIC}/system/all`;
+            const newState = !allOffState;
+            const payload = newState ? 'ALL_OFF' : 'OFF';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            mqttClient.publish(topic, payload, { qos: 0, retain:  true }, (err) => {
+
+                if (err) {
+                    console.error('Failed to send ALL OFF toggle:', err);
+                    debugLog(`Error: Failed to toggle ALL OFF`);
+                } else {
+                    allOffState = newState;
+                    updateAllOffButton();
+                    debugLog(`ALL OFF toggled to: ${newState ?  'ON' : 'OFF'}`);
+                }
+            });
+        }
+
+        // Connect to MQTT broker
+        function connectMQTT() {
+            const brokerUrl = MQTT_BROKERS[currentBrokerIndex];
+            debugLog(`Attempting to connect to:  ${brokerUrl}`);
+
+            mqttClient = mqtt.connect(brokerUrl, {
+                clientId: CLIENT_ID,
+@@ -463,14 +516,14 @@
+                connectTimeout: 10000
+            });
+
+            mqttClient. on('connect', () => {
+                debugLog(`Connected to MQTT broker:  ${brokerUrl}`);
+                brokerConnected = true;
+                updateStatus();
+
+                // Subscribe to topics
+                mqttClient.subscribe(`${BASE_TOPIC}/device/status`, (err) => {
+                    if (! err) {
+                        debugLog('Subscribed to device/status');
+                    }
+                });
+@@ -480,9 +533,15 @@
+                        debugLog('Subscribed to relay states');
+                    }
+                });
+
+                mqttClient.subscribe(`${BASE_TOPIC}/system/all`, (err) => {
+                    if (!err) {
+                        debugLog('Subscribed to system/all');
+                    }
+                });
+            });
+
+            mqttClient. on('message', (topic, message) => {
+                const msg = message.toString();
+                debugLog(`Received: ${topic} = ${msg}`);
+
+@@ -492,7 +551,7 @@
+                    updateStatus();
+
+                    // If device goes offline, set all relay states to unknown
+                    if (! deviceOnline) {
+                        for (let i = 1; i <= RELAY_COUNT; i++) {
+                            updateRelayState(i, '?');
+                        }
+@@ -504,14 +563,12 @@
+                if (relayMatch) {
+                    const relayNum = parseInt(relayMatch[1]);
+                    updateRelayState(relayNum, msg);
+                }
+
+                // ALL OFF state updates
+                if (topic === `${BASE_TOPIC}/system/all`) {
+                    allOffState = (msg === 'ALL_OFF');
+                    updateAllOffButton();
+
+
+                }
+            });
+
+@@ -534,28 +591,28 @@
+                }
+            });
+
+            mqttClient. on('offline', () => {
+                debugLog('MQTT client offline');
+                brokerConnected = false;
+                updateStatus();
+            });
+
+            mqttClient.on('reconnect', () => {
+                debugLog('Reconnecting to MQTT broker...');
+            });
+
+            mqttClient.on('close', () => {
+                debugLog('Connection closed');
+                brokerConnected = false;
+                updateStatus();
+            });
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            debugLog('Dashboard loaded, initializing...');
+            generateRelayCards();
+            connectMQTT();
+        });
+    </script>
 </body>
-</html>
