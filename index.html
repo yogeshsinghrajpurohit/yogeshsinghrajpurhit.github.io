@@ -2,251 +2,374 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Smart Relay Control Dashboard</title>
-
-  <!-- MQTT.js CDN -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32-S3 Relay Dashboard</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-
   <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --card: #1f2937;
+      --accent: #22d3ee;
+      --accent-strong: #0ea5e9;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --shadow: 0 20px 60px -24px rgba(0,0,0,0.6);
+      --radius: 16px;
+      --transition: 220ms ease;
+    }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Segoe UI", sans-serif;
-      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-      color: #fff;
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(120% 120% at 50% 20%, rgba(34,211,238,0.08), transparent 50%), var(--bg);
+      color: var(--text);
+      min-height: 100vh;
     }
-
     header {
-      padding: 20px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      background: rgba(0,0,0,0.3);
+      justify-content: space-between;
+      padding: 24px 24px 0;
+      gap: 12px;
+      flex-wrap: wrap;
     }
-
     h1 {
       margin: 0;
-      font-size: 24px;
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
     }
-
-    .status {
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-weight: bold;
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: var(--muted);
+      font-size: 0.92rem;
     }
-
-    .online {
-      background: #00c853;
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 0 6px rgba(239,68,68,0.12);
+      transition: background var(--transition), box-shadow var(--transition);
     }
-
-    .offline {
-      background: #d50000;
+    .dot.connected {
+      background: var(--success);
+      box-shadow: 0 0 0 6px rgba(34,197,94,0.14);
     }
-
-    .container {
-      padding: 30px;
+    main {
+      padding: 24px;
     }
-
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    button {
+      border: none;
+      cursor: pointer;
+      border-radius: 12px;
+      font-weight: 600;
+      transition: transform var(--transition), box-shadow var(--transition), background var(--transition), color var(--transition), opacity var(--transition);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      color: #0b1220;
+      padding: 12px 18px;
+      box-shadow: var(--shadow);
+    }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-ghost {
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 10px 14px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
     }
-
     .card {
-      background: rgba(255,255,255,0.1);
-      border-radius: 16px;
-      padding: 20px;
-      text-align: center;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-      transition: transform 0.2s;
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
     }
-
-    .card:hover {
-      transform: translateY(-5px);
+    .card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(160% 140% at 20% 20%, rgba(34,211,238,0.07), transparent 40%);
+      opacity: 0;
+      transition: opacity var(--transition);
+      z-index: -1;
     }
-
-    .card.ON {
-      border: 2px solid #00e676;
+    .card.on::after { opacity: 1; }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
     }
-
-    .card.OFF {
-      border: 2px solid #ff5252;
+    .state {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      color: var(--muted);
     }
-
-    .card h3 {
-      margin-top: 0;
+    .state-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 0 6px rgba(239,68,68,0.12);
+      transition: background var(--transition), box-shadow var(--transition);
     }
-
-    .card p {
-      margin: 10px 0;
+    .state.on { color: var(--success); }
+    .state.on .state-dot {
+      background: var(--success);
+      box-shadow: 0 0 0 6px rgba(34,197,94,0.16);
     }
-
-    button {
-      padding: 10px 20px;
-      border-radius: 20px;
-      border: none;
-      font-weight: bold;
-      cursor: pointer;
-      transition: 0.2s;
+    .toggle {
+      position: relative;
+      width: 64px;
+      height: 32px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.08);
+      transition: background var(--transition), border var(--transition);
     }
-
-    .on-btn {
-      background: #ff5252;
-      color: white;
+    .thumb {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #0b1220;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+      transition: transform var(--transition), background var(--transition), box-shadow var(--transition);
     }
-
-    .off-btn {
-      background: #00e676;
-      color: black;
+    .toggle.on {
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      border-color: rgba(34,211,238,0.5);
     }
-
-    button:disabled {
-      background: gray;
-      cursor: not-allowed;
+    .toggle.on .thumb {
+      transform: translateX(32px);
+      background: #0b1220;
+      box-shadow: 0 10px 26px rgba(34,211,238,0.35);
     }
-
     .footer {
-      margin-top: 40px;
-      text-align: center;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
     }
-
-    .alloff {
-      padding: 15px 40px;
-      font-size: 18px;
-      background: linear-gradient(45deg, #ff1744, #d50000);
-      color: white;
-      border-radius: 30px;
-      box-shadow: 0 10px 30px rgba(255,0,0,0.4);
+    .disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    @media (max-width: 640px) {
+      header { padding: 20px 16px 0; }
+      main { padding: 16px; }
     }
   </style>
 </head>
-
 <body>
+  <header>
+    <div>
+      <h1>ESP32-S3 · 8-Channel Relay Control</h1>
+      <div class="pill">
+        <span class="dot" id="conn-dot"></span>
+        <span id="conn-text">Disconnected</span>
+      </div>
+    </div>
+    <div class="pill" id="client-id-pill"></div>
+  </header>
 
-<header>
-  <h1>Smart Relay Control Panel</h1>
-  <div id="deviceStatus" class="status offline">🔴 OFFLINE</div>
-</header>
+  <main>
+    <div class="actions">
+      <button class="btn-primary" id="all-off-btn">ALL OFF</button>
+      <button class="btn-ghost" id="reconnect-btn">Reconnect</button>
+    </div>
 
-<div class="container">
-  <div class="grid" id="relayGrid"></div>
+    <div class="grid" id="cards"></div>
 
-  <div class="footer">
-    <button id="allOffBtn" class="alloff" disabled>🚨 ALL OFF</button>
-  </div>
-</div>
+    <div class="footer">
+      MQTT Broker: <strong>broker.emqx.io:1883</strong> (WebSockets) · Base Topic: <strong>smart_innovation_lab_ecb_eice</strong><br/>
+      Subscribing to <code>smart_innovation_lab_ecb_eice/relay/{1-8}/state</code>, publishing to <code>smart_innovation_lab_ecb_eice/relay/{1-8}/cmd</code> and <code>smart_innovation_lab_ecb_eice/system/all</code>.
+    </div>
+  </main>
 
-<script>
-  const BROKER_URL = "wss://broker.emqx.io:8084/mqtt";
-  const BASE_TOPIC = "smart_innovation_lab_ecb_eice";
+  <script>
+    // ---- Config ----
+    const BROKER_URL = "wss://broker.emqx.io:8084/mqtt"; // secure WebSocket
+    const BASE_TOPIC = "smart_innovation_lab_ecb_eice";
+    const RELAY_COUNT = 8;
 
-  const relayNames = [
-    "LED 1","LED 2","LED 3","LED 4",
-    "LED 5","LED 6","LED 7","LED 8"
-  ];
+    // ---- UI Helpers ----
+    const cardsEl = document.getElementById("cards");
+    const connDot = document.getElementById("conn-dot");
+    const connText = document.getElementById("conn-text");
+    const clientIdPill = document.getElementById("client-id-pill");
+    const allOffBtn = document.getElementById("all-off-btn");
+    const reconnectBtn = document.getElementById("reconnect-btn");
 
-  const relayStates = Array(8).fill("OFF");
-
-  const grid = document.getElementById("relayGrid");
-  const statusDiv = document.getElementById("deviceStatus");
-  const allOffBtn = document.getElementById("allOffBtn");
-
-  // Create relay cards
-  relayNames.forEach((name, i) => {
-    const card = document.createElement("div");
-    card.className = "card OFF";
-    card.id = `relay-${i}`;
-
-    card.innerHTML = `
-      <h3>${name}</h3>
-      <p id="state-${i}">Status: OFF</p>
-      <button id="btn-${i}" class="off-btn">TURN ON</button>
-    `;
-
-    grid.appendChild(card);
-
-    document.getElementById(`btn-${i}`).onclick = () => toggleRelay(i);
-  });
-
-  // MQTT connection
-  const client = mqtt.connect(BROKER_URL);
-
-  client.on("connect", () => {
-    console.log("MQTT connected");
-
-    client.subscribe(`${BASE_TOPIC}/device/status`);
-    for (let i = 1; i <= 8; i++) {
-      client.subscribe(`${BASE_TOPIC}/relay/${i}/state`);
+    const relays = [];
+    for (let i = 1; i <= RELAY_COUNT; i++) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        <div class="card-header">
+          <div>
+            <div style="font-weight:700;">Relay ${i}</div>
+            <div style="color:var(--muted); font-size:0.92rem;">GPIO-bound channel</div>
+          </div>
+          <div class="state" id="state-${i}">
+            <span class="state-dot"></span>
+            <span>OFF</span>
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end;">
+          <div class="toggle" id="toggle-${i}">
+            <div class="thumb"></div>
+          </div>
+        </div>
+      `;
+      cardsEl.appendChild(card);
+      relays.push({
+        idx: i,
+        card,
+        stateEl: card.querySelector(`#state-${i}`),
+        toggleEl: card.querySelector(`#toggle-${i}`),
+      });
     }
-  });
 
-  client.on("message", (topic, payload) => {
-    const msg = payload.toString();
-
-    // Device status
-    if (topic.endsWith("/device/status")) {
-      if (msg === "online") {
-        statusDiv.textContent = "🟢 ONLINE";
-        statusDiv.className = "status online";
-        allOffBtn.disabled = false;
-        enableButtons(true);
+    function setConnectionState(connected) {
+      if (connected) {
+        connDot.classList.add("connected");
+        connText.textContent = "Connected";
+        allOffBtn.classList.remove("disabled");
+        reconnectBtn.classList.add("disabled");
       } else {
-        statusDiv.textContent = "🔴 OFFLINE";
-        statusDiv.className = "status offline";
-        allOffBtn.disabled = true;
-        enableButtons(false);
+        connDot.classList.remove("connected");
+        connText.textContent = "Disconnected";
+        allOffBtn.classList.add("disabled");
+        reconnectBtn.classList.remove("disabled");
       }
+      relays.forEach(r => {
+        r.toggleEl.classList.toggle("disabled", !connected);
+      });
     }
 
-    // Relay states
-    for (let i = 1; i <= 8; i++) {
-      if (topic === `${BASE_TOPIC}/relay/${i}/state`) {
-        updateRelay(i - 1, msg);
+    function updateRelayState(idx, on) {
+      const relay = relays[idx - 1];
+      if (!relay) return;
+      relay.card.classList.toggle("on", on);
+      relay.stateEl.classList.toggle("on", on);
+      relay.stateEl.querySelector("span:last-child").textContent = on ? "ON" : "OFF";
+      relay.toggleEl.classList.toggle("on", on);
+    }
 
-        // Clear retained ALL_OFF if any relay turns ON
-        if (msg === "ON") {
-          client.publish(`${BASE_TOPIC}/system/all`, "", { retain: true });
+    // ---- MQTT Setup ----
+    let client;
+    let reconnectTimer;
+    let clientId = `webdash-${Math.random().toString(16).slice(2, 10)}`;
+    clientIdPill.textContent = `Client ID: ${clientId}`;
+
+    const options = {
+      clientId,
+      reconnectPeriod: 2000,
+      clean: true,
+      connectTimeout: 8_000,
+      protocolVersion: 4,
+    };
+
+    function connectMQTT() {
+      if (client) {
+        try { client.end(true); } catch (e) {}
+      }
+      client = mqtt.connect(BROKER_URL, options);
+
+      client.on("connect", () => {
+        setConnectionState(true);
+        subscribeTopics();
+      });
+
+      client.on("reconnect", () => setConnectionState(false));
+      client.on("close", () => setConnectionState(false));
+      client.on("offline", () => setConnectionState(false));
+      client.on("error", (err) => console.error("MQTT error:", err));
+
+      client.on("message", (topic, payload) => {
+        const msg = payload.toString();
+        const match = topic.match(/relay\/(\d+)\/state$/);
+        if (match) {
+          const idx = Number(match[1]);
+          updateRelayState(idx, msg === "ON");
         }
+      });
+    }
+
+    function subscribeTopics() {
+      for (let i = 1; i <= RELAY_COUNT; i++) {
+        client.subscribe(`${BASE_TOPIC}/relay/${i}/state`, { qos: 0 }, (err) => {
+          if (err) console.error("Subscribe error", i, err);
+        });
       }
     }
-  });
 
-  function toggleRelay(index) {
-    if (!client.connected) return;
-    const cmd = relayStates[index] === "ON" ? "OFF" : "ON";
-    client.publish(`${BASE_TOPIC}/relay/${index + 1}/cmd`, cmd);
-  }
-
-  function updateRelay(index, state) {
-    relayStates[index] = state;
-
-    const card = document.getElementById(`relay-${index}`);
-    const text = document.getElementById(`state-${index}`);
-    const btn = document.getElementById(`btn-${index}`);
-
-    card.className = `card ${state}`;
-    text.textContent = `Status: ${state}`;
-
-    if (state === "ON") {
-      btn.textContent = "TURN OFF";
-      btn.className = "on-btn";
-    } else {
-      btn.textContent = "TURN ON";
-      btn.className = "off-btn";
+    function publishCommand(idx, on) {
+      client.publish(`${BASE_TOPIC}/relay/${idx}/cmd`, on ? "ON" : "OFF", { qos: 0, retain: false });
     }
-  }
 
-  function enableButtons(enable) {
-    for (let i = 0; i < 8; i++) {
-      document.getElementById(`btn-${i}`).disabled = !enable;
+    function publishAllOff() {
+      client.publish(`${BASE_TOPIC}/system/all`, "ALL_OFF", { qos: 0, retain: true });
     }
-  }
 
-  allOffBtn.onclick = () => {
-    if (!client.connected) return;
-    client.publish(`${BASE_TOPIC}/system/all`, "ALL_OFF", { retain: true });
-  };
-</script>
+    // ---- UI Events ----
+    relays.forEach(r => {
+      r.toggleEl.addEventListener("click", () => {
+        if (!client || client.disconnected) return;
+        const willTurnOn = !r.toggleEl.classList.contains("on");
+        publishCommand(r.idx, willTurnOn);
+        // Optimistic UI (will be corrected by state topic)
+        updateRelayState(r.idx, willTurnOn);
+      });
+    });
 
+    allOffBtn.addEventListener("click", () => {
+      if (!client || client.disconnected) return;
+      publishAllOff();
+    });
+
+    reconnectBtn.addEventListener("click", () => {
+      if (client && client.connected) return;
+      setConnectionState(false);
+      connectMQTT();
+    });
+
+    // ---- Init ----
+    setConnectionState(false);
+    connectMQTT();
+  </script>
 </body>
 </html>
