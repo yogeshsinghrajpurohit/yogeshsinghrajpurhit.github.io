@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -20,6 +20,23 @@
       --radius: 16px;
       --transition: 220ms ease;
     }
+    [data-theme="light"] {
+      --bg: #f1f5f9;
+      --panel: #e2e8f0;
+      --card: #ffffff;
+      --accent: #0891b2;
+      --accent-strong: #0369a1;
+      --text: #0f172a;
+      --muted: #64748b;
+      --danger: #dc2626;
+      --success: #16a34a;
+      --shadow: 0 20px 60px -24px rgba(0,0,0,0.15);
+    }
+    [data-theme="light"] body {
+      background: radial-gradient(120% 120% at 50% 20%, rgba(8,145,178,0.06), transparent 50%), var(--bg);
+    }
+    [data-theme="light"] .thumb { background: #ffffff; }
+    [data-theme="light"] .toggle.on .thumb { background: #ffffff; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -93,6 +110,10 @@
       color: var(--text);
       padding: 10px 14px;
       border: 1px solid rgba(255,255,255,0.06);
+    }
+    [data-theme="light"] .btn-ghost {
+      background: rgba(0,0,0,0.04);
+      border-color: rgba(0,0,0,0.12);
     }
     .grid {
       display: grid;
@@ -187,6 +208,9 @@
       opacity: 0.5;
       pointer-events: none;
     }
+    .relay-title { font-weight: 700; }
+    .relay-subtitle { color: var(--muted); font-size: 0.92rem; }
+    .toggle-wrap { display: flex; justify-content: flex-end; }
     @media (max-width: 640px) {
       header { padding: 20px 16px 0; }
       main { padding: 16px; }
@@ -203,6 +227,7 @@
       </div>
     </div>
     <div class="pill" id="client-id-pill"></div>
+    <button class="btn-ghost" id="theme-btn" aria-label="Toggle theme" title="Toggle dark/light theme">🌙</button>
   </header>
 
   <main>
@@ -224,12 +249,23 @@
     const BROKER_URL = "wss://broker.emqx.io:8084/mqtt"; // secure WebSocket
     const BASE_TOPIC = "smart_innovation_lab_ecb_eice";
     const RELAY_COUNT = 8;
+    const RELAY_NAMES = [
+      "Main Light",
+      "Fan",
+      "AC Unit",
+      "Water Pump",
+      "Heater",
+      "Security Lock",
+      "Ventilation",
+      "Auxiliary",
+    ];
 
     // ---- UI Helpers ----
     const cardsEl = document.getElementById("cards");
     const connDot = document.getElementById("conn-dot");
     const connText = document.getElementById("conn-text");
     const clientIdPill = document.getElementById("client-id-pill");
+    const themeBtn = document.getElementById("theme-btn");
     const allOffBtn = document.getElementById("all-off-btn");
     const reconnectBtn = document.getElementById("reconnect-btn");
 
@@ -240,15 +276,15 @@
       card.innerHTML = `
         <div class="card-header">
           <div>
-            <div style="font-weight:700;">Relay ${i}</div>
-            <div style="color:var(--muted); font-size:0.92rem;">GPIO-bound channel</div>
+            <div class="relay-title">Relay ${i} — ${RELAY_NAMES[i - 1]}</div>
+            <div class="relay-subtitle">Channel ${i} · GPIO-bound</div>
           </div>
           <div class="state" id="state-${i}">
             <span class="state-dot"></span>
             <span>OFF</span>
           </div>
         </div>
-        <div style="display:flex; justify-content:flex-end;">
+        <div class="toggle-wrap">
           <div class="toggle" id="toggle-${i}">
             <div class="thumb"></div>
           </div>
@@ -348,7 +384,7 @@
     // ---- UI Events ----
     relays.forEach(r => {
       r.toggleEl.addEventListener("click", () => {
-        if (!client || client.disconnected) return;
+        if (!client || !client.connected) return;
         const willTurnOn = !r.toggleEl.classList.contains("on");
         publishCommand(r.idx, willTurnOn);
         // Optimistic UI (will be corrected by state topic)
@@ -357,7 +393,7 @@
     });
 
     allOffBtn.addEventListener("click", () => {
-      if (!client || client.disconnected) return;
+      if (!client || !client.connected) return;
       publishAllOff();
     });
 
@@ -365,6 +401,13 @@
       if (client && client.connected) return;
       setConnectionState(false);
       connectMQTT();
+    });
+
+    themeBtn.addEventListener("click", () => {
+      const html = document.documentElement;
+      const isDark = html.getAttribute("data-theme") !== "light";
+      html.setAttribute("data-theme", isDark ? "light" : "dark");
+      themeBtn.textContent = isDark ? "☀️" : "🌙";
     });
 
     // ---- Init ----
